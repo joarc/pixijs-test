@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title>PixiJS Test</title>
+    <style>* {padding: 0; margin: 0}</style>
+    <script src="https://pixijs.download/v4.8.1/pixi.min.js"></script>
+  </head>
+  <body>
+    <script type="text/javascript">
+    let type = "WebGL"
+    if(!PIXI.utils.isWebGLSupported()){
+      type = "canvas"
+    }
+
+    PIXI.utils.sayHello(type);
+
+    let app = new PIXI.Application({
+        width: 0,         // default: 800
+        height: 0,        // default: 600
+        antialias: true,    // default: false
+        transparent: false, // default: false
+        resolution: 1       // default: 1
+      }
+    );
+
+    document.body.appendChild(app.view);
+
+    app.renderer.view.style.position = "absolute";
+    app.renderer.view.style.display = "block";
+    app.renderer.autoResize = true;
+    app.renderer.resize(window.innerWidth, window.innerHeight);
+    console.log(window.innerWidth, window.innerHeight);
+
+    PIXI.loader
+        .add("img/joar.png")
+        .load(setup);
+
+    let player,
+        state,
+        left,
+        right,
+        up,
+        down,
+        players = [],
+        ws;
+
+    function setup() {
+      //This code will run when the loader has finished loading the image
+      console.log("image assets loaded");
+
+      player = new PIXI.Sprite(PIXI.loader.resources["img/joar.png"].texture);
+      player.width = 100;
+      player.height = 100;
+      player.anchor.x = 0.5;
+      player.anchor.y = 0.5;
+      player.x = 100;
+      player.y = 100;
+      player.vx = 0;
+      player.vy = 0;
+
+      app.stage.addChild(player);
+
+      //Capture the keyboard arrow keys
+      left = keyboard(37);
+      up = keyboard(38);
+      right = keyboard(39);
+      down = keyboard(40);
+
+      //Left
+      left.press = () => {
+        if (!up.isDown && !down.isDown) {
+          player.vx = -5;
+        } else {
+          player.vx = -2.5;
+          if (up.isDown) {
+            player.vy = -2.5;
+          } else if (down.isDown) {
+            player.vy = 2.5;
+          }
+        }
+      };
+      left.release = () => {
+        if (!right.isDown) {
+          player.vx = 0;
+        }
+        if (up.isDown) {
+          player.vy = -5;
+        } else if (down.isDown) {
+          player.vy = 5;
+        }
+      };
+
+      //Up
+      up.press = () => {
+        if (!left.isDown && !right.isDown) {
+          player.vy = -5;
+        } else {
+          player.vy = -2.5;
+          if (left.isDown) {
+            player.vx = -2.5;
+          } else if (right.isDown) {
+            player.vx = 2.5;
+          }
+        }
+      };
+      up.release = () => {
+        if (!down.isDown) {
+          player.vy = 0;
+        }
+        if (left.isDown) {
+          player.vx = -5;
+        } else if (right.isDown) {
+          player.vx = 5
+        }
+      };
+
+      //Right
+      right.press = () => {
+        if (!up.isDown && !down.isDown) {
+          player.vx = 5;
+        } else {
+          player.vx = 2.5;
+          if (up.isDown) {
+            player.vy = -2.5;
+          } else if (down.isDown) {
+            player.vy = 2.5;
+          }
+        }
+      };
+      right.release = () => {
+        if (!left.isDown) {
+          player.vx = 0;
+        }
+        if (up.isDown) {
+          player.vy = -5;
+        } else if (down.isDown) {
+          player.vy = 5;
+        }
+      };
+
+      //Down
+      down.press = () => {
+        if (!left.isDown && !right.isDown) {
+          player.vy = 5;
+        } else {
+          player.vy = 2.5;
+          if (left.isDown) {
+            player.vx = -2.5;
+          } else if (right.isDown) {
+            player.vx = 2.5;
+          }
+        }
+      };
+      down.release = () => {
+        if (!up.isDown) {
+          player.vy = 0;
+        }
+        if (left.isDown) {
+          player.vx = -5;
+        } else if (right.isDown) {
+          player.vx = 5;
+        }
+      };
+
+      ws = new WebSocket("ws://www2.joarc.ovh:8080");
+      ws.addEventListener("message", function(rawEvent){
+        // console.log(rawEvent);
+        let event = JSON.parse(rawEvent.data);
+        if (event.type == "move") {
+          console.log("move", event.data.id);
+          players[event.data.id].x = event.data.x;
+          players[event.data.id].y = event.data.y;
+        } else if (event.type == "join") {
+          createOtherPlayer(event.data.id);
+          console.log("Player joined", event.data.id);
+        } else if (event.type == "leave") {
+          deleteOtherPlayer(event.data.id);
+          console.log("Player left", event.data.id);
+        } else if (event.type == "iam") {
+          console.log("I am", event.data.id);
+        }
+      });
+      ws.addEventListener("open", function(event){
+        console.log("WS Open");
+      });
+
+      state = function(){};
+
+      app.ticker.add(delta => gameLoop(delta));
+    }
+
+    function gameLoop(delta) {
+      if (ws.readyState == 1) {
+        state = play;
+      }
+      state(delta);
+    }
+
+    function play(delta) {
+      // // console.log(delta);
+
+      // if (player.rotation < (Math.PI*2)) {
+      //   player.rotation += 0.01;
+      // } else {
+      //   player.rotation = 0;
+      // }
+      let xMove = true,
+          yMove = true;
+
+      if (player.x-50 < 0) {
+        if (player.vx <= 0) {
+          xMove = false;
+        }
+      } else if (player.x+50 > window.innerWidth) {
+        if (player.vx > 0) {
+          xMove = false;
+        }
+      }
+
+      if (player.y-50 < 0) {
+        if (player.vy <= 0) {
+          yMove = false;
+        }
+      } else if (player.y+50 > window.innerHeight) {
+        if (player.vy > 0) {
+          yMove = false;
+        }
+      }
+
+      if (xMove) {
+        player.x += player.vx;
+      }
+      if (yMove) {
+        player.y += player.vy;
+      }
+      if (player.vx != 0 || player.vy != 0) {
+        if (player.lastSentX != player.x || player.lastSentY != player.y) {
+          player.lastSentX = player.x;
+          player.lastSentY = player.y;
+          ws.send(JSON.stringify({type: "move", data: {x: player.x, y: player.y}}));
+        }
+      }
+
+      // renderOtherPlayers();
+    }
+
+    function createOtherPlayer(id) {
+      players[id] = otherPlayer = new PIXI.Sprite(PIXI.loader.resources["img/joar.png"].texture);
+      otherPlayer.width = 100;
+      otherPlayer.height = 100;
+      otherPlayer.anchor.x = 0.5;
+      otherPlayer.anchor.y = 0.5;
+      otherPlayer.x = 100;
+      otherPlayer.y = 100;
+      otherPlayer.vx = 0;
+      otherPlayer.vy = 0;
+
+      app.stage.addChild(otherPlayer);
+    }
+
+    function deleteOtherPlayer(id) {
+      players[id].visible = false;
+    }
+
+    function renderOtherPlayers() {
+
+    }
+
+    function keyboard(keyCode) {
+      let key = {};
+      key.code = keyCode;
+      key.isDown = false;
+      key.isUp = true;
+      key.press = undefined;
+      key.release = undefined;
+      //The `downHandler`
+      key.downHandler = event => {
+        if (event.keyCode === key.code) {
+          if (key.isUp && key.press) key.press();
+          key.isDown = true;
+          key.isUp = false;
+        }
+        event.preventDefault();
+      };
+
+      //The `upHandler`
+      key.upHandler = event => {
+        if (event.keyCode === key.code) {
+          if (key.isDown && key.release) key.release();
+          key.isDown = false;
+          key.isUp = true;
+        }
+        event.preventDefault();
+      };
+
+      //Attach event listeners
+      window.addEventListener("keydown", key.downHandler.bind(key), false);
+      window.addEventListener("keyup", key.upHandler.bind(key), false);
+
+      return key;
+    }
+
+  </script>
+  </body>
+</html>
